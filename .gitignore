@@ -1,5 +1,14 @@
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
+.env
+# React Native
+# Build
+# Android
+android/.gradle/
+android/.idea/
+android/.cxx/ 
+android/.externalNativeBuild/
+
 # dependencies
 node_modules/
 
