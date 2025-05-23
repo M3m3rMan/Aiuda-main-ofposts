@@ -1,3 +1,4 @@
+// app/(tabs)/sidebar.tsx
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, FlatList } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -11,7 +12,14 @@ interface SidebarProps {
   onClose: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ isVisible, chats, onSelectChat, onCreateNewChat, onDeleteChat, onClose }) => {
+const Sidebar: React.FC<SidebarProps> = ({ 
+  isVisible, 
+  chats, 
+  onSelectChat, 
+  onCreateNewChat, 
+  onDeleteChat, 
+  onClose 
+}) => {
   if (!isVisible) return null;
 
   return (
@@ -55,6 +63,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 5,
+    zIndex: 100,
   },
   closeButton: {
     alignSelf: 'flex-end',

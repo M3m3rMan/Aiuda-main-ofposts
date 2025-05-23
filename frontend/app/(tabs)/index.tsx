@@ -1,90 +1,145 @@
+// app/(tabs)/index.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  View, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  FlatList, 
-  ActivityIndicator, 
-  StyleSheet, 
-  Alert,
-  KeyboardAvoidingView, 
-  Platform,
-  Keyboard
+  View, Text, TextInput, TouchableOpacity, FlatList, 
+  ActivityIndicator, StyleSheet, Alert, KeyboardAvoidingView, 
+  Platform, Keyboard, Dimensions
 } from 'react-native';
 import axios from 'axios';
-const { v4: uuidv4 } = require('uuid');
+import 'react-native-get-random-values';
+import { v4 as uuidv4 } from 'uuid';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import Sidebar from './Sidebar';
 
-// Types
 interface Message {
   id: string;
   text: string;
   sender: 'user' | 'bot';
 }
 
+interface Chat {
+  _id: string;
+  title: string;
+}
+
 const ChatScreen = () => {
-  // State
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isSending, setIsSending] = useState(false);
+  const [sidebarVisible, setSidebarVisible] = useState(false);
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const flatListRef = useRef<FlatList>(null);
   
-  // Config - Update this to match your actual backend URL
   const BACKEND_URL = 'http://192.168.1.78:3001';
 
-  // Initial welcome message
+  // Fetch all conversations on mount
   useEffect(() => {
-    setMessages([{
-      id: uuidv4(),
-      text: "¡Hola! ¿En qué puedo ayudarle hoy?",
-      sender: 'bot'
-    }]);
+    axios.get(`${BACKEND_URL}/api/conversations`)
+      .then(res => setChats(res.data))
+      .catch(err => console.error('Failed to load chats', err));
   }, []);
 
-  interface ChatResponse {
-      id: string;
-      reply: string;
-  }
-  
-  const sendMessage = async () => {
-      if (!input.trim()) return;
-      
-      const userMessage = {
+  // Load messages for a selected conversation
+  const handleSelectChat = async (chatId: string) => {
+    setSidebarVisible(false);
+    setCurrentChatId(chatId);
+    try {
+      const res = await axios.get(`${BACKEND_URL}/api/conversations/${chatId}`);
+      setMessages(res.data.messages.map((msg: any) => ({
         id: uuidv4(),
-        text: input,
-        sender: 'user' as const,
-      };
-  
-      setIsSending(true);
-      setMessages(prev => [...prev, userMessage]);
-      setInput('');
-      Keyboard.dismiss();
-  
-      try {
-        // Send to your backend endpoint
-        const res = await axios.post<ChatResponse>(`${BACKEND_URL}/chat/`, {
-          user_id: "lausd_parent_123",
-          content: input,
-          language: 'es'
-        });
-  
-        const botMessage = {
-          id: res.data.id,
-          text: res.data.reply,
-          sender: 'bot' as const,
-        };
-  
-        setMessages(prev => [...prev, botMessage]);
-      } catch (err) {
-        console.error("Error sending message:", err);
-        Alert.alert("Error", "Failed to send message");
-        setMessages(prev => prev.filter(m => m.id !== userMessage.id));
-        setInput(userMessage.text);
-      } finally {
-        setIsSending(false);
+        text: msg.content,
+        sender: msg.role === 'user' ? 'user' : 'bot'
+      })));
+    } catch (err) {
+      Alert.alert('Error', 'Could not load chat');
+    }
+  };
+
+  // Create a new conversation
+  const handleCreateNewChat = async () => {
+    try {
+      const res = await axios.post(`${BACKEND_URL}/api/conversations`, { title: `New Chat ${chats.length + 1}` });
+      setChats([...chats, res.data]);
+      setSidebarVisible(false);
+      setCurrentChatId(res.data._id);
+      setMessages([]);
+    } catch (err) {
+      Alert.alert('Error', 'Could not create chat');
+    }
+  };
+
+  // Delete a conversation
+  const handleDeleteChat = async (chatId: string) => {
+    try {
+      await axios.delete(`${BACKEND_URL}/api/conversations/${chatId}`);
+      setChats(chats.filter(chat => chat._id !== chatId));
+      if (currentChatId === chatId) {
+        setCurrentChatId(null);
+        setMessages([]);
       }
+    } catch (err) {
+      Alert.alert('Error', 'Could not delete chat');
+    }
+  };
+
+  // Send a message (add to conversation and get bot reply)
+  const sendMessage = async () => {
+    if (!input.trim() || !currentChatId) return;
+
+    const userMessage = {
+      id: uuidv4(),
+      text: input,
+      sender: 'user' as const,
     };
+
+    setIsSending(true);
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
+    Keyboard.dismiss();
+
+    try {
+      // Add user message to conversation in backend
+      await axios.post(`${BACKEND_URL}/api/conversations/${currentChatId}/messages`, {
+        role: 'user',
+        content: input
+      });
+
+      // Get bot reply from your /api/ask endpoint (or you can use a similar endpoint that also saves the bot reply)
+      const response = await axios.post(`${BACKEND_URL}/api/ask`, {
+        question: input
+      }, {
+        timeout: 10000
+      });
+
+      const botMessage = {
+        id: uuidv4(),
+        text: response.data.answer || "No pude entender tu pregunta. ¿Podrías reformularla?",
+        sender: 'bot' as const,
+      };
+
+      // Add bot message to conversation in backend
+      await axios.post(`${BACKEND_URL}/api/conversations/${currentChatId}/messages`, {
+        role: 'assistant',
+        content: botMessage.text
+      });
+
+      setMessages(prev => [...prev, botMessage]);
+    } catch (error) {
+      console.error("Chat error:", error);
+      const errorMessage = (error as any).code === 'ECONNABORTED' 
+        ? "La solicitud tardó demasiado. Por favor intenta nuevamente."
+        : "Hubo un error al procesar tu mensaje. Por favor intenta más tarde.";
+      
+      setMessages(prev => [...prev, {
+        id: uuidv4(),
+        text: errorMessage,
+        sender: 'bot'
+      }]);
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   const MessageBubble = ({ message }: { message: Message }) => (
     <View style={[
@@ -99,52 +154,63 @@ const ChatScreen = () => {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>LAUSD Parent Assistant</Text>
-      </View>
-
-      {/* Messages */}
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        renderItem={({ item }) => <MessageBubble message={item} />}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.messagesContainer}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+      <Sidebar 
+        isVisible={sidebarVisible} 
+        chats={chats}
+        onSelectChat={handleSelectChat}
+        onCreateNewChat={handleCreateNewChat}
+        onDeleteChat={handleDeleteChat}
+        onClose={() => setSidebarVisible(false)}
       />
 
-      {/* Input Area */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.inputContainer}
-      >
-        <TextInput
-          value={input}
-          onChangeText={setInput}
-          placeholder="Type your message..."
-          placeholderTextColor="#888"
-          style={styles.input}
-          editable={!isSending}
-          multiline
-          onSubmitEditing={sendMessage}
-          returnKeyType="send"
+      <View style={[styles.chatContainer, sidebarVisible && styles.chatShifted]}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => setSidebarVisible(true)}>
+            <Ionicons name="menu" size={24} color="white" />
+          </TouchableOpacity>
+          <Text style={styles.title}>LAUSD Parent Assistant</Text>
+        </View>
+
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          renderItem={({ item }) => <MessageBubble message={item} />}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.messagesContainer}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         />
-        <TouchableOpacity
-          onPress={sendMessage}
-          disabled={!input.trim() || isSending}
-          style={[
-            styles.sendButton,
-            (!input.trim() || isSending) && styles.disabledButton
-          ]}
+
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.inputContainer}
         >
-          {isSending ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Ionicons name="send" size={20} color="white" />
-          )}
-        </TouchableOpacity>
-      </KeyboardAvoidingView>
+          <TextInput
+            value={input}
+            onChangeText={setInput}
+            placeholder="Type your message..."
+            placeholderTextColor="#888"
+            style={styles.input}
+            editable={!isSending}
+            multiline
+            onSubmitEditing={sendMessage}
+            returnKeyType="send"
+          />
+          <TouchableOpacity
+            onPress={sendMessage}
+            disabled={!input.trim() || isSending}
+            style={[
+              styles.sendButton,
+              (!input.trim() || isSending) && styles.disabledButton
+            ]}
+          >
+            {isSending ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Ionicons name="send" size={20} color="white" />
+            )}
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </View>
     </View>
   );
 };
@@ -152,17 +218,28 @@ const ChatScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    flexDirection: 'row',
     backgroundColor: '#f5f5f5',
   },
+  chatContainer: {
+    flex: 1,
+  },
+  chatShifted: {
+    marginLeft: Dimensions.get('window').width * 0.8,
+  },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 16,
     backgroundColor: '#1a56db',
-    alignItems: 'center'
   },
   title: {
+    flex: 1,
     color: 'white',
     fontSize: 18,
     fontWeight: 'bold',
+    textAlign: 'center',
+    marginLeft: -24,
   },
   messagesContainer: {
     flexGrow: 1,
