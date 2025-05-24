@@ -8,13 +8,27 @@ const path = require('path');
 const pdfParse = require('pdf-parse');
 const { OpenAI } = require('openai');
 const mongoose = require('mongoose');
+const cors = require('cors');
+const MongoDB = require('mongodb');
+
 
 const app = express();
 const PORT = 3001;
 
 app.use(express.json()); // Add this line near the top, after express()
-
+app.use(cors());
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY; // Store your key in .env
+
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+});
+mongoose.connection.on('connected', () => {
+  console.log('MongoDB connected');
+});
+mongoose.connection.on('error', (err) => {
+  console.error('MongoDB connection error:', err);
+});
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
