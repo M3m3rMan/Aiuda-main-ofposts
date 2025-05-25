@@ -1,304 +1,284 @@
-// app/(tabs)/index.tsx
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  View, Text, TextInput, TouchableOpacity, FlatList, 
-  ActivityIndicator, StyleSheet, Alert, KeyboardAvoidingView, 
-  Platform, Keyboard, Dimensions
-} from 'react-native';
-import axios from 'axios';
-import 'react-native-get-random-values';
-import { v4 as uuidv4 } from 'uuid';
-import Sidebar from './Sidebar';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, FlatList, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Sidebar from '../../components/Sidebar';
+import axios from 'axios';
+import { useNavigation } from 'expo-router';
 
-interface Message {
-  id: string;
-  text: string;
-  sender: 'user' | 'bot';
-}
+const API_URL = 'http://192.168.1.78:3001/api';
 
-interface Chat {
+const LAUSD_BLUE = '#00529B';
+const LAUSD_GOLD = '#FFD100';
+
+type Message = {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp?: string;
+};
+
+type Conversation = {
   _id: string;
   title: string;
-}
+  messages: Message[];
+  createdAt: string;
+};
 
-const App = () => {
-  const [input, setInput] = useState('');
+export default function App() {
+  const [showSidebar, setShowSidebar] = useState(false);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [isSending, setIsSending] = useState(false);
-  const [sidebarVisible, setSidebarVisible] = useState(false);
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
-  const BACKEND_URL = 'http://192.168.1.78:3001';
+  const navigation = useNavigation();
 
-  // Fetch all conversations on mount
+  // Fetch all conversations
   useEffect(() => {
-    axios.get(`${BACKEND_URL}/api/conversations`)
-      .then(res => setChats(res.data))
-      .catch(err => {
-        console.error('Failed to load chats', err?.response?.status, err?.response?.data, err.message);
-      });
+    fetchConversations();
   }, []);
 
-  // Load messages for a selected conversation
-  const handleSelectChat = async (chatId: string) => {
-    setSidebarVisible(false);
-    setCurrentChatId(chatId);
-    try {
-      const res = await axios.get(`${BACKEND_URL}/api/conversations/${chatId}`);
-      setMessages(res.data.messages.map((msg: any) => ({
-        id: uuidv4(),
-        text: msg.content,
-        sender: msg.role === 'user' ? 'user' : 'bot'
-      })));
-    } catch (err) {
-      Alert.alert('Error', 'Could not load chat');
-    }
-  };
-
-  // Create a new conversation
-  const handleCreateNewChat = async () => {
-    try {
-      const res = await axios.post(`${BACKEND_URL}/api/conversations`, { title: `New Chat ${chats.length + 1}` });
-      setChats([...chats, res.data]);
-      setSidebarVisible(false);
-      setCurrentChatId(res.data._id);
+  // Fetch messages when conversation changes
+  useEffect(() => {
+    if (currentConversationId) {
+      fetchMessages(currentConversationId);
+    } else {
       setMessages([]);
-    } catch (err) {
-      Alert.alert('Error', 'Could not create chat');
     }
-  };
+  }, [currentConversationId]);
 
-  // Delete a conversation
-  const handleDeleteChat = async (chatId: string) => {
+  // Scroll to bottom on new message
+  useEffect(() => {
+    if (messages.length > 0) {
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
+  }, [messages]);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerShown: false,
+      tabBarStyle: { display: 'none' }, // This works if you’re inside a tab context
+    });
+  }, [navigation]);
+
+  const fetchConversations = async () => {
+    setLoading(true);
     try {
-      await axios.delete(`${BACKEND_URL}/api/conversations/${chatId}`);
-      setChats(chats.filter(chat => chat._id !== chatId));
-      if (currentChatId === chatId) {
-        setCurrentChatId(null);
-        setMessages([]);
-      }
+      const res = await axios.get(`${API_URL}/conversations`);
+      setConversations(res.data);
     } catch (err) {
-      Alert.alert('Error', 'Could not delete chat');
+      // handle error
     }
+    setLoading(false);
   };
 
-  // Send a message (add to conversation and get bot reply)
-  const sendMessage = async () => {
-    if (!input.trim() || !currentChatId) return;
+  const fetchMessages = async (id: string) => {
+    setLoading(true);
+    try {
+      const res = await axios.get(`${API_URL}/conversations/${id}`);
+      setMessages(res.data.messages || []);
+    } catch (err) {
+      setMessages([]);
+    }
+    setLoading(false);
+  };
 
-    const userMessage = {
-      id: uuidv4(),
-      text: input,
-      sender: 'user' as const,
-    };
+  const handleSelectConversation = (id: string) => {
+    setCurrentConversationId(id);
+    setShowSidebar(false);
+  };
 
-    setIsSending(true);
-    setMessages(prev => [...prev, userMessage]);
+  const handleDeleteConversation = async (id: string) => {
+    await axios.delete(`${API_URL}/conversations/${id}`);
+    setConversations(prev => prev.filter(c => c._id !== id));
+    if (currentConversationId === id) setCurrentConversationId(null);
+  };
+
+  const handleNewConversation = async () => {
+    const res = await axios.post(`${API_URL}/conversations`, { title: `Chat ${conversations.length + 1}` });
+    setConversations([res.data, ...conversations]);
+    setCurrentConversationId(res.data._id);
+    setShowSidebar(false);
+  };
+
+  const handleSend = async () => {
+    if (!input.trim() || !currentConversationId) return;
+    setSending(true);
+    // Add user message
+    const userMsg = { role: 'user', content: input };
+    await axios.post(`${API_URL}/conversations/${currentConversationId}/messages`, userMsg);
+    setMessages(prev => [...prev, { ...userMsg, timestamp: new Date().toISOString() }]);
     setInput('');
-    Keyboard.dismiss();
-
+    // Get assistant response
     try {
-      // Add user message to conversation in backend
-      await axios.post(`${BACKEND_URL}/api/conversations/${currentChatId}/messages`, {
-        role: 'user',
-        content: input
-      });
-
-      // Get bot reply from your /api/ask endpoint
-      const response = await axios.post(`${BACKEND_URL}/api/ask`, {
-        question: input
-      }, {
-        timeout: 10000
-      });
-
-      const botMessage = {
-        id: uuidv4(),
-        text: response.data.answer || "No pude entender tu pregunta. ¿Podrías reformularla?",
-        sender: 'bot' as const,
-      };
-
-      // Add bot message to conversation in backend
-      await axios.post(`${BACKEND_URL}/api/conversations/${currentChatId}/messages`, {
-        role: 'assistant',
-        content: botMessage.text
-      });
-
-      setMessages(prev => [...prev, botMessage]);
-    } catch (error) {
-      console.error("Chat error:", error);
-      const errorMessage = (error as any).code === 'ECONNABORTED' 
-        ? "La solicitud tardó demasiado. Por favor intenta nuevamente."
-        : "Hubo un error al procesar tu mensaje. Por favor intenta más tarde.";
-      
-      setMessages(prev => [...prev, {
-        id: uuidv4(),
-        text: errorMessage,
-        sender: 'bot'
-      }]);
-    } finally {
-      setIsSending(false);
+      const res = await axios.post(`${API_URL}/ask`, { question: input });
+      const assistantMsg = { role: 'assistant', content: res.data.answer };
+      await axios.post(`${API_URL}/conversations/${currentConversationId}/messages`, assistantMsg);
+      setMessages(prev => [...prev, { ...assistantMsg, timestamp: new Date().toISOString() }]);
+    } catch (err) {
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I could not get an answer.' }]);
     }
+    setSending(false);
   };
 
-  const MessageBubble = ({ message }: { message: Message }) => (
+  const renderItem = ({ item }: { item: Message }) => (
     <View style={[
-      styles.bubble,
-      message.sender === 'user' ? styles.userBubble : styles.botBubble
+      styles.messageBubble,
+      item.role === 'user' ? styles.userBubble : styles.assistantBubble
     ]}>
-      <Text style={message.sender === 'user' ? styles.userText : styles.botText}>
-        {message.text}
+      <Text style={[
+        styles.messageText,
+        item.role === 'user' ? styles.userText : styles.assistantText
+      ]}>
+        {item.content}
       </Text>
     </View>
   );
 
   return (
-    <View style={styles.container}>
-      <Sidebar 
-        isVisible={sidebarVisible} 
-        chats={chats.map(chat => ({ _id: chat._id, name: chat.title }))}
-        onSelectChat={handleSelectChat}
-        onCreateNewChat={handleCreateNewChat}
-        onDeleteChat={handleDeleteChat}
-        onClose={() => setSidebarVisible(false)}
-      />
+    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+      {/* Hamburger Icon */}
+      <TouchableOpacity style={styles.menu} onPress={() => setShowSidebar(true)}>
+        <Ionicons name="menu" size={30} color={LAUSD_BLUE} />
+      </TouchableOpacity>
 
-      <View style={[styles.chatContainer, sidebarVisible && styles.chatShifted]}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => setSidebarVisible(true)}>
-            <Ionicons name="menu" size={24} color="white" />
-          </TouchableOpacity>
-          <Text style={styles.title}>LAUSD Parent Assistant</Text>
-        </View>
-
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          renderItem={({ item }) => <MessageBubble message={item} />}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.messagesContainer}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+      {/* Sidebar */}
+      {showSidebar && (
+        <Sidebar
+          chats={conversations.map(c => ({ id: c._id, name: c.title }))}
+          onSelect={handleSelectConversation}
+          onDelete={handleDeleteConversation}
+          onClose={() => setShowSidebar(false)}
         />
+      )}
 
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.inputContainer}
-        >
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={{ flex: 1, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
+          <Text style={styles.headerTitle}>                                   Aiuda</Text>
+        </View>
+        <TouchableOpacity onPress={handleNewConversation}>
+          <Ionicons name="add-circle" size={28} color={LAUSD_GOLD} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Main Chat Area */}
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.content}>
+            {loading ? (
+              <ActivityIndicator size="large" color={LAUSD_BLUE} />
+            ) : (
+              <FlatList
+                ref={flatListRef}
+                data={messages}
+                renderItem={renderItem}
+                keyExtractor={(_, idx) => idx.toString()}
+                contentContainerStyle={{ paddingBottom: 20 }}
+              />
+            )}
+          </View>
+        </TouchableWithoutFeedback>
+        {/* Input */}
+        <View style={styles.inputContainer}>
           <TextInput
             value={input}
             onChangeText={setInput}
-            placeholder="Type your message..."
-            placeholderTextColor="#888"
+            placeholder={currentConversationId ? "Ask a question about LAUSD rules..." : "Select or start a chat"}
             style={styles.input}
-            editable={!isSending}
-            multiline
-            onSubmitEditing={sendMessage}
-            returnKeyType="send"
+            editable={!!currentConversationId && !sending}
+            placeholderTextColor="#888"
           />
-          <TouchableOpacity
-            onPress={sendMessage}
-            disabled={!input.trim() || isSending}
-            style={[
-              styles.sendButton,
-              (!input.trim() || isSending) && styles.disabledButton
-            ]}
-          >
-            {isSending ? (
-              <ActivityIndicator color="#fff" />
+          <TouchableOpacity onPress={handleSend} disabled={!input.trim() || !currentConversationId || sending} style={styles.sendButton}>
+            {sending ? (
+              <ActivityIndicator size="small" color={LAUSD_BLUE} />
             ) : (
-              <Ionicons name="send" size={20} color="white" />
+              <Ionicons name="send" size={24} color={input && currentConversationId ? LAUSD_BLUE : '#ccc'} />
             )}
           </TouchableOpacity>
-        </KeyboardAvoidingView>
-      </View>
+        </View>
+      </KeyboardAvoidingView>
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    flexDirection: 'row',
-    backgroundColor: '#f5f5f5',
-  },
-  chatContainer: {
-    flex: 1,
-  },
-  chatShifted: {
-    marginLeft: Dimensions.get('window').width * 0.8,
+  menu: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    zIndex: 1000,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#1a56db',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
+    paddingTop: 60,
+    paddingBottom: 16,
+    paddingHorizontal: 24,
+    borderBottomWidth: 2,
+    borderBottomColor: '#eee',
   },
-  title: {
-    flex: 1,
-    color: 'white',
-    fontSize: 18,
+  headerTitle: {
+    fontSize: 22,
     fontWeight: 'bold',
-    textAlign: 'center',
-    marginLeft: -24,
+    color: LAUSD_BLUE,
+    flex: 1,
   },
-  messagesContainer: {
-    flexGrow: 1,
-    padding: 16,
-    paddingBottom: 80,
+  content: {
+    flex: 1,
+    marginTop: 20,
+    paddingHorizontal: 20,
   },
-  bubble: {
-    maxWidth: '80%',
-    padding: 12,
+  messageBubble: {
+    padding: 14,
     borderRadius: 12,
-    marginBottom: 8,
+    marginBottom: 10,
+    maxWidth: '80%',
+    alignSelf: 'flex-start',
   },
   userBubble: {
+    backgroundColor: LAUSD_BLUE,
     alignSelf: 'flex-end',
-    backgroundColor: '#1a56db',
-    borderBottomRightRadius: 0,
   },
-  botBubble: {
+  assistantBubble: {
+    backgroundColor: LAUSD_GOLD,
     alignSelf: 'flex-start',
-    backgroundColor: '#e5e7eb',
-    borderBottomLeftRadius: 0,
+  },
+  messageText: {
+    fontSize: 16,
   },
   userText: {
-    color: 'white',
+    color: '#fff',
   },
-  botText: {
-    color: '#111827',
+  assistantText: {
+    color: '#222',
   },
   inputContainer: {
     flexDirection: 'row',
-    padding: 8,
-    backgroundColor: 'white',
+    alignItems: 'center',
     borderTopWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: '#eee',
+    padding: 12,
+    backgroundColor: '#fff',
   },
   input: {
     flex: 1,
-    minHeight: 40,
-    maxHeight: 100,
-    paddingHorizontal: 12,
-    backgroundColor: '#f3f4f6',
+    borderWidth: 1,
+    borderColor: LAUSD_BLUE,
     borderRadius: 20,
-    marginRight: 8,
-    color: '#111827',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#f9fafb',
+    marginRight: 10,
+    fontSize: 16,
   },
   sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1a56db',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  disabledButton: {
-    backgroundColor: '#cccccc',
+    padding: 8,
   },
 });
-
-export default App;
-

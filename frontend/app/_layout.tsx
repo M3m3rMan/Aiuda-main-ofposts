@@ -1,80 +1,59 @@
-// app/_layout.tsx
+import FontAwesome from '@expo/vector-icons/FontAwesome';
+import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
-import { AuthProvider } from '../context/auth';
-import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
-import { useAuth } from '../context/auth';
+import * as SplashScreen from 'expo-splash-screen';
+import { useEffect } from 'react';
+import 'react-native-reanimated';
+
+import { useColorScheme } from '@/components/useColorScheme';
+
+export {
+  // Catch any errors thrown by the Layout component.
+  ErrorBoundary,
+} from 'expo-router';
+
+export const unstable_settings = {
+  // Ensure that reloading on `/modal` keeps a back button present.
+  initialRouteName: '(tabs)',
+};
+
+// Prevent the splash screen from auto-hiding before asset loading is complete.
+SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  const [loaded, error] = useFonts({
+    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+    ...FontAwesome.font,
+  });
+
+  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
+  useEffect(() => {
+    if (error) throw error;
+  }, [error]);
+
+  useEffect(() => {
+    if (loaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [loaded]);
+
+  if (!loaded) {
+    return null;
+  }
+
+  return <RootLayoutNav />;
+}
+
+function RootLayoutNav() {
+  const colorScheme = useColorScheme();
+
   return (
-    <AuthProvider>
-      <Layout />
-    </AuthProvider>
+    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+      </Stack>
+    </ThemeProvider>
   );
 }
-
-function Layout() {
-  const { isLoading, backendConnected } = useAuth();
-
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#1a56db" />
-        <Text style={styles.loadingText}>Loading application...</Text>
-      </View>
-    );
-  }
-
-  if (!backendConnected) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorTitle}>Connection Error</Text>
-        <Text style={styles.errorText}>
-          Could not connect to the server. Please check:
-        </Text>
-        <Text style={styles.errorBullet}>- Your network connection</Text>
-        <Text style={styles.errorBullet}>- That the backend server is running</Text>
-        <Text style={styles.errorText}>Then restart the app.</Text>
-      </View>
-    );
-  }
-
-  return <Stack screenOptions={{ headerShown: false }} />;
-}
-
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'white'
-  },
-  loadingText: {
-    marginTop: 20,
-    color: '#333'
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 20,
-    backgroundColor: 'white'
-  },
-  errorTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#d32f2f',
-    marginBottom: 20,
-    textAlign: 'center'
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#333',
-    marginBottom: 10,
-    textAlign: 'center'
-  },
-  errorBullet: {
-    fontSize: 14,
-    color: '#333',
-    marginLeft: 20,
-    marginBottom: 5
-  }
-});

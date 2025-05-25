@@ -1,16 +1,18 @@
-require('dotenv').config();
-const express = require('express');
-const axios = require('axios');
-const cheerio = require('cheerio');
-const fs = require('fs');
-const csv = require('csv-parser');
-const path = require('path');
-const pdfParse = require('pdf-parse');
-const { OpenAI } = require('openai');
-const mongoose = require('mongoose');
-const cors = require('cors');
-const MongoDB = require('mongodb');
+import { pipeline } from '@xenova/transformers';
+import dotenv from 'dotenv';
+dotenv.config();
+import axios from 'axios';
+import express from 'express';
+import * as cheerio from 'cheerio'; // Changed import
+import fs from 'fs';
+import csv from 'csv-parser';
+import path from 'path';
+import { OpenAI } from 'openai';
+import mongoose from 'mongoose';
+import cors from 'cors';
+import MongoDB from 'mongodb';
 
+mongoose.connect(process.env.MONGODB_URI);
 
 const app = express();
 const PORT = 3001;
@@ -45,14 +47,43 @@ const conversationSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
+const documentChunkSchema = new mongoose.Schema({
+  content: String,
+  filename: String,
+  embedding: [Number], // Will store the vector embedding
+  metadata: {
+    chunkIndex: Number,
+    totalChunks: Number
+  }
+});
+
 const Conversation = mongoose.model('Conversation', conversationSchema);
+const DocumentChunk = mongoose.model('DocumentChunk', documentChunkSchema);
+
+// Create the vector search index
+async function createVectorSearchIndex() {
+  try {
+    // await mongoose.connection.collection('documentchunks').createIndex({
+    //   embedding: {
+    //     type: "vectorSearch"
+    //   }
+    // });
+    console.log('Vector search index created');
+  } catch (error) {
+    console.error('Error creating vector search index:', error);
+  }
+}
 
 // Scrape LAUSD directory for high schools
 async function scrapeHighSchools() {
   const url = 'https://achieve.lausd.net/Page/1085';
   const result = [];
   try {
-    const { data } = await axios.get(url);
+    const { data } = await axios.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36'
+      }
+    });
     const $ = cheerio.load(data);
 
     // Select the table rows that contain high school data
@@ -219,8 +250,7 @@ app.get('/api/bulletins', async (req, res) => {
   }
 });
 
-// Endpoint to accept user questions
-
+// Consolidated smart handler for /api/ask
 app.post('/api/ask', async (req, res) => {
   const { question } = req.body;
   if (!question) {
@@ -228,13 +258,81 @@ app.post('/api/ask', async (req, res) => {
   }
 
   try {
+    console.log('Starting PDF extraction...');
+    const pdfs = await extractAllPdfs('./pdfs');
+    console.log(`Processed ${pdfs.length} PDFs`);
+
+    if (pdfs.length === 0) {
+      return res.json({
+        question,
+        answer: "No PDF documents found. Please ensure PDFs are in the correct directory."
+      });
+    }
+
+    // Create chunks from all PDFs
+    const allChunks = [];
+    pdfs.forEach(pdf => {
+      const chunks = chunkText(pdf.text);
+      console.log(`Created ${chunks.length} chunks from ${pdf.filename}`);
+      chunks.forEach(chunk => allChunks.push({
+        chunk,
+        filename: pdf.filename
+      }));
+    });
+
+    // Get embeddings for chunks and question
+    console.log('Getting embeddings for chunks...');
+    const chunkEmbeddings = [];
+    for (const obj of allChunks) {
+      chunkEmbeddings.push(await getEmbedding(obj.chunk));
+    }
+    console.log('Getting embedding for question...');
+    const questionEmbedding = await getEmbedding(question);
+
+    // Find most similar chunks
+    console.log('Finding most relevant chunks...');
+    const similarities = chunkEmbeddings.map(e => cosineSimilarity(e, questionEmbedding));
+    const topIndices = similarities
+      .map((sim, idx) => ({ sim, idx }))
+      .sort((a, b) => b.sim - a.sim)
+      .slice(0, 3)
+      .map(obj => obj.idx);
+
+    // Construct context from top chunks
+    const ragContext = topIndices.map(idx =>
+      `From ${allChunks[idx].filename}:\n${allChunks[idx].chunk}`
+    ).join('\n\n---\n\n');
+
+    console.log('Found relevant chunks from:', topIndices.map(idx => allChunks[idx].filename));
+
+    // Compose context for OpenAI
+    const context = ragContext ? `Relevant LAUSD documents:\n\n${ragContext}` : '';
+
+    console.log('CONTEXT LENGTH:', context.length);
+    console.log('PREVIEW OF CONTEXT:', context.slice(0, 200) + '...');
+
+    // Only proceed if we have context
+    if (!context) {
+      return res.json({
+        question,
+        answer: "Sorry, I couldn't find relevant information in the LAUSD documents."
+      });
+    }
+
+    // Ask OpenAI with context
     const response = await axios.post(
       'https://api.openai.com/v1/chat/completions',
       {
-        model: 'gpt-4o-mini', // or 'gpt-4o-mini' if available
+        model: 'gpt-4o-mini',
         messages: [
-          { role: 'system', content: 'You are a helpful assistant for LAUSD school rules.' },
-          { role: 'user', content: question }
+          {
+            role: 'system',
+            content: 'You are a specific and detailed LAUSD policy expert. Use ONLY the provided context to answer questions. If the exact answer is not in the context, say "I cannot find specific information about that in the LAUSD documents provided."'
+          },
+          {
+            role: 'user',
+            content: `Context:\n${context}\n\nQuestion: ${question}`
+          }
         ],
         max_tokens: 300
       },
@@ -249,25 +347,43 @@ app.post('/api/ask', async (req, res) => {
     const answer = response.data.choices[0].message.content;
     res.json({ question, answer });
   } catch (err) {
-    console.error('OpenAI API error:', err.message);
-    res.status(500).json({ error: 'Failed to get answer from GPT-4o-mini', details: err.message });
+    console.error('Error:', err);
+    res.status(500).json({
+      error: 'Failed to process request',
+      details: err.message
+    });
   }
 });
 
 // Extract text from all PDF files in a directory
 async function extractAllPdfs(pdfDir) {
-  const files = fs.readdirSync(pdfDir).filter(f => f.endsWith('.pdf'));
-  const results = [];
-  for (const file of files) {
-    const filePath = path.join(pdfDir, file);
-    const dataBuffer = fs.readFileSync(filePath);
-    const data = await pdfParse(dataBuffer);
-    results.push({
-      filename: file,
-      text: data.text
-    });
+  const pdfParse = (await import('pdf-parse')).default;
+  try {
+    const absolutePdfDir = path.join(process.cwd(), pdfDir);
+    console.log('Looking for PDFs in:', absolutePdfDir);
+    const files = fs.readdirSync(absolutePdfDir).filter(f => f.endsWith('.pdf'));
+    console.log('Found PDF files:', files);
+    
+    const results = [];
+    for (const file of files) {
+      try {
+        console.log('Processing PDF:', file);
+        const dataBuffer = fs.readFileSync(path.join(absolutePdfDir, file));
+        const pdfData = await pdfParse(dataBuffer);
+        results.push({
+          filename: file,
+          text: pdfData.text
+        });
+        console.log(`Successfully extracted text from ${file}`);
+      } catch (e) {
+        console.error(`Error processing ${file}:`, e.message);
+      }
+    }
+    return results;
+  } catch (e) {
+    console.error('Error in extractAllPdfs:', e.message);
+    return [];
   }
-  return results;
 }
 
 // 1. Chunk text
@@ -277,15 +393,6 @@ function chunkText(text, size = 1000) {
     chunks.push(text.slice(i, i + size));
   }
   return chunks;
-}
-
-// 2. Embed text
-async function embedTexts(texts) {
-  const response = await openai.createEmbedding({
-    model: 'text-embedding-3-small',
-    input: texts,
-  });
-  return response.data.data.map(obj => obj.embedding);
 }
 
 // 3. Find most similar chunk (cosine similarity)
@@ -301,42 +408,120 @@ function cosineSimilarity(a, b) {
 
 // 4. Main RAG function
 async function answerWithRAG(question) {
-  const pdfs = await extractAllPdfs('./pdfs');
-  const allChunks = [];
-  pdfs.forEach(pdf => {
-    chunkText(pdf.text).forEach(chunk => allChunks.push({ chunk, filename: pdf.filename }));
-  });
+  try {
+    // Get question embedding from Hugging Face
+    const questionEmbedding = await getEmbedding(question);
 
-  const chunkTexts = allChunks.map(obj => obj.chunk);
-  const chunkEmbeddings = await embedTexts(chunkTexts);
-  const questionEmbedding = (await embedTexts([question]))[0];
+    // Search for similar chunks using MongoDB Atlas Vector Search
+    const similarChunks = await DocumentChunk.aggregate([
+      {
+        $vectorSearch: {
+          queryVector: questionEmbedding.data[0].embedding,
+          path: "embedding",
+          numCandidates: 100,
+          limit: 3
+        }
+      },
+      {
+        $project: {
+          content: 1,
+          filename: 1,
+          score: { $meta: "vectorSearchScore" }
+        }
+      }
+    ]);
 
-  // Find top 3 most similar chunks
-  const similarities = chunkEmbeddings.map(e => cosineSimilarity(e, questionEmbedding));
-  const topIndices = similarities
-    .map((sim, idx) => ({ sim, idx }))
-    .sort((a, b) => b.sim - a.sim)
-    .slice(0, 3)
-    .map(obj => obj.idx);
+    // Construct context from similar chunks
+    const context = similarChunks
+      .map(chunk => `From ${chunk.filename}:\n${chunk.content}`)
+      .join('\n\n---\n\n');
 
-  const context = topIndices.map(idx => chunkTexts[idx]).join('\n---\n');
+    // Get answer from OpenAI
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a specific and detailed LAUSD policy expert. Use ONLY the provided context to answer questions.'
+        },
+        {
+          role: 'user',
+          content: `Context:\n${context}\n\nQuestion: ${question}`
+        }
+      ],
+      max_tokens: 300
+    });
 
-  // Call GPT-4o-mini with context
-  const completion = await openai.createChatCompletion({
-    model: 'gpt-4o-mini',
-    messages: [
-      { role: 'system', content: 'You are a helpful assistant for LAUSD school rules.' },
-      { role: 'user', content: `Context:\n${context}\n\nQuestion: ${question}` }
-    ],
-    max_tokens: 300
-  });
-
-  return completion.data.choices[0].message.content;
+    return completion.choices[0].message.content;
+  } catch (error) {
+    console.error('RAG error:', error);
+    throw error;
+  }
 }
 
-// Example usage:
-// answerWithRAG('How many times can my son be late without getting in trouble?').then(console.log);
+// Update the embedTexts function to store in MongoDB
+async function storeDocumentChunks(chunks) {
+  try {
+    // Get embeddings from Hugging Face
+    const embeddings = [];
+    for (const chunk of chunks) {
+      const embedding = await getEmbedding(chunk.content);
+      embeddings.push(embedding);
+    }
 
+    // Create documents with embeddings
+    const documents = chunks.map((chunk, i) => ({
+      content: chunk.content,
+      filename: chunk.filename,
+      embedding: embeddings[i],
+      metadata: {
+        chunkIndex: i,
+        totalChunks: chunks.length
+      }
+    }));
+
+    // Store in MongoDB
+    await DocumentChunk.insertMany(documents);
+    console.log(`Stored ${documents.length} chunks with embeddings`);
+  } catch (error) {
+    console.error('Error storing chunks:', error);
+    throw error;
+  }
+}
+
+// Add a function to initialize the database with PDF chunks
+async function initializeDatabase() {
+  try {
+    // Clear existing chunks
+    await DocumentChunk.deleteMany({});
+    
+    // Extract PDFs
+    const pdfs = await extractAllPdfs('./pdfs');
+    
+    // Create chunks
+    const allChunks = [];
+    pdfs.forEach(pdf => {
+      const chunks = chunkText(pdf.text);
+      chunks.forEach(chunk => allChunks.push({
+        content: chunk,
+        filename: pdf.filename
+      }));
+    });
+    
+    // Store chunks with embeddings
+    await storeDocumentChunks(allChunks);
+    console.log('Database initialized with PDF chunks');
+  } catch (error) {
+    console.error('Error initializing database:', error);
+  }
+}
+
+// Call this after MongoDB connects
+mongoose.connection.on('connected', async () => {
+  console.log('MongoDB connected');
+  // await createVectorSearchIndex();
+  await initializeDatabase();
+});
 app.get('/', (req, res) => {
   res.send(`
     <h2>LAUSD High Schools Scraper API</h2>
@@ -402,9 +587,20 @@ app.delete('/api/conversations/:id', async (req, res) => {
   }
 });
 
+let embedder = null;
+async function getEmbedding(data) {
+  if (!embedder) {
+    embedder = await pipeline(
+      'feature-extraction',
+      'Xenova/nomic-embed-text-v1',
+      { use_auth_token: process.env.HUGGINGFACE_API_KEY }
+    );
+  }
+  const results = await embedder(data, { pooling: 'mean', normalize: true });
+  return Array.from(results.data);
+}
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`GET http://localhost:${PORT}/api/highschools`);
-  console.log(`GET http://localhost:${PORT}/api/highschools/csv`);
-  console.log(`GET http://localhost:${PORT}/api/bulletins`);
+  
 });
