@@ -40,6 +40,7 @@ export default function App() {
     fetchConversations();
   }, []);
 
+  
   // Fetch messages when conversation changes
   useEffect(() => {
     if (currentConversationId) {
@@ -61,7 +62,7 @@ export default function App() {
   useLayoutEffect(() => {
     navigation.setOptions({
       headerShown: false,
-      tabBarStyle: { display: 'none' }, // This works if you’re inside a tab context
+      tabBarStyle: { display: 'none' },
     });
   }, [navigation]);
 
@@ -71,7 +72,7 @@ export default function App() {
       const res = await axios.get(`${API_URL}/conversations`);
       setConversations(res.data);
     } catch (err) {
-      // handle error
+      console.error('Error fetching conversations:', err);
     }
     setLoading(false);
   };
@@ -82,6 +83,7 @@ export default function App() {
       const res = await axios.get(`${API_URL}/conversations/${id}`);
       setMessages(res.data.messages || []);
     } catch (err) {
+      console.error('Error fetching messages:', err);
       setMessages([]);
     }
     setLoading(false);
@@ -93,33 +95,49 @@ export default function App() {
   };
 
   const handleDeleteConversation = async (id: string) => {
-    await axios.delete(`${API_URL}/conversations/${id}`);
-    setConversations(prev => prev.filter(c => c._id !== id));
-    if (currentConversationId === id) setCurrentConversationId(null);
+    try {
+      await axios.delete(`${API_URL}/conversations/${id}`);
+      setConversations(prev => prev.filter(c => c._id !== id));
+      if (currentConversationId === id) setCurrentConversationId(null);
+    } catch (err) {
+      console.error('Error deleting conversation:', err);
+    }
   };
 
   const handleNewConversation = async () => {
-    const res = await axios.post(`${API_URL}/conversations`, { title: `Chat ${conversations.length + 1}` });
-    setConversations([res.data, ...conversations]);
-    setCurrentConversationId(res.data._id);
-    setShowSidebar(false);
+    try {
+      const res = await axios.post(`${API_URL}/conversations`, { title: `Chat ${conversations.length + 1}` });
+      setConversations([res.data, ...conversations]);
+      setCurrentConversationId(res.data._id);
+      setShowSidebar(false);
+    } catch (err) {
+      console.error('Error creating new conversation:', err);
+    }
   };
 
   const handleSend = async () => {
     if (!input.trim() || !currentConversationId) return;
     setSending(true);
+    
     // Add user message
     const userMsg = { role: 'user', content: input };
-    await axios.post(`${API_URL}/conversations/${currentConversationId}/messages`, userMsg);
-    setMessages(prev => [...prev, { ...userMsg, timestamp: new Date().toISOString() }]);
-    setInput('');
-    // Get assistant response
     try {
-      const res = await axios.post(`${API_URL}/ask`, { question: input });
-      const assistantMsg = { role: 'assistant', content: res.data.answer };
+      await axios.post(`${API_URL}/conversations/${currentConversationId}/messages`, userMsg);
+      setMessages(prev => [...prev, { ...userMsg, timestamp: new Date().toISOString() } as Message]);
+      setInput('');
+      
+      // Get assistant response
+      const response = await fetch('http://192.168.1.78:3001/api/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: input, language: 'es' })
+      });
+      const data = await response.json();
+      const assistantMsg = { role: 'assistant', content: data.answer };
       await axios.post(`${API_URL}/conversations/${currentConversationId}/messages`, assistantMsg);
-      setMessages(prev => [...prev, { ...assistantMsg, timestamp: new Date().toISOString() }]);
+      setMessages(prev => [...prev, { ...assistantMsg, timestamp: new Date().toISOString() } as Message]);
     } catch (err) {
+      console.error('Error sending message:', err);
       setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I could not get an answer.' }]);
     }
     setSending(false);
@@ -140,26 +158,31 @@ export default function App() {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+    <View style={styles.container}>
       {/* Hamburger Icon */}
       <TouchableOpacity style={styles.menu} onPress={() => setShowSidebar(true)}>
         <Ionicons name="menu" size={30} color={LAUSD_BLUE} />
       </TouchableOpacity>
 
-      {/* Sidebar */}
+      {/* Sidebar with overlay */}
       {showSidebar && (
-        <Sidebar
-          chats={conversations.map(c => ({ id: c._id, name: c.title }))}
-          onSelect={handleSelectConversation}
-          onDelete={handleDeleteConversation}
-          onClose={() => setShowSidebar(false)}
-        />
+        <>
+          <TouchableWithoutFeedback onPress={() => setShowSidebar(false)}>
+            <View style={styles.overlay} />
+          </TouchableWithoutFeedback>
+          <Sidebar
+            chats={conversations.map(c => ({ id: c._id, name: c.title }))}
+            onSelect={handleSelectConversation}
+            onDelete={handleDeleteConversation}
+            onClose={() => setShowSidebar(false)}
+          />
+        </>
       )}
 
       {/* Header */}
       <View style={styles.header}>
-        <View style={{ flex: 1, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}>
-          <Text style={styles.headerTitle}>                                   Aiuda</Text>
+        <View style={styles.headerTitleContainer}>
+          <Text style={styles.headerTitle}>Aiuda</Text>
         </View>
         <TouchableOpacity onPress={handleNewConversation}>
           <Ionicons name="add-circle" size={28} color={LAUSD_GOLD} />
@@ -167,7 +190,11 @@ export default function App() {
       </View>
 
       {/* Main Chat Area */}
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={90}
+      >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.content}>
             {loading ? (
@@ -178,11 +205,12 @@ export default function App() {
                 data={messages}
                 renderItem={renderItem}
                 keyExtractor={(_, idx) => idx.toString()}
-                contentContainerStyle={{ paddingBottom: 20 }}
+                contentContainerStyle={styles.messageList}
               />
             )}
           </View>
         </TouchableWithoutFeedback>
+
         {/* Input */}
         <View style={styles.inputContainer}>
           <TextInput
@@ -193,7 +221,11 @@ export default function App() {
             editable={!!currentConversationId && !sending}
             placeholderTextColor="#888"
           />
-          <TouchableOpacity onPress={handleSend} disabled={!input.trim() || !currentConversationId || sending} style={styles.sendButton}>
+          <TouchableOpacity 
+            onPress={handleSend} 
+            disabled={!input.trim() || !currentConversationId || sending} 
+            style={styles.sendButton}
+          >
             {sending ? (
               <ActivityIndicator size="small" color={LAUSD_BLUE} />
             ) : (
@@ -207,6 +239,19 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    zIndex: 999,
+  },
   menu: {
     position: 'absolute',
     top: 50,
@@ -223,17 +268,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     borderBottomWidth: 2,
     borderBottomColor: '#eee',
+    zIndex: 10,
+  },
+  headerTitleContainer: {
+    flex: 1,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
   headerTitle: {
     fontSize: 22,
     fontWeight: 'bold',
     color: LAUSD_BLUE,
-    flex: 1,
   },
   content: {
     flex: 1,
     marginTop: 20,
     paddingHorizontal: 20,
+  },
+  messageList: {
+    paddingBottom: 20,
   },
   messageBubble: {
     padding: 14,
