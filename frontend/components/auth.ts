@@ -9,10 +9,9 @@ WebBrowser.maybeCompleteAuthSession();
 
 export const useAuth = () => {
   const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: 'YOUR_EXPO_CLIENT_ID', // Replace with your actual Expo client ID
-    iosClientId: 'YOUR_IOS_CLIENT_ID', // Replace with your actual iOS client ID
-    androidClientId: 'YOUR_ANDROID_CLIENT_ID', // Replace with your actual Android client ID
-    webClientId: 'YOUR_WEB_CLIENT_ID', // Replace with your actual Web client ID
+    clientId: '1064574150351-3ovkrm8qhd88raml28iu5unlh685mfm0.apps.googleusercontent.com', // Replace with your actual Expo client ID
+    iosClientId: '1064574150351-nvpn1ps57e8c2mc3vrql2kaojs16glv9.apps.googleusercontent.com', // Replace with your actual iOS client ID
+    webClientId: '1064574150351-thn2hkt8gnabvbjrds2ssfu6qk1pcojt.apps.googleusercontent.com', // Replace with your actual Web client ID
   });
 
   const signInWithGoogle = async () => {

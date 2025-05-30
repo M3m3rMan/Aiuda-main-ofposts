@@ -1,26 +1,27 @@
 // app/screens/AuthLoadingScreen.tsx
 import React, { useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth } from '../../components/firebase';
+import { useRouter } from 'expo-router';
+import { auth } from '../components/firebase';
 
-export default function AuthLoadingScreen({ navigation }: { navigation: any }) {
+export default function AuthLoadingScreen() {
+  const router = useRouter();
+
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        // Check if user is logged in with Firebase
         const user = auth.currentUser;
-        
+
         if (user) {
-          // User is logged in, navigate to main app
-          navigation.replace('(tabs)');
+          // Navigate to the tabs/home
+          router.replace('/(tabs)');
         } else {
-          // No user logged in, navigate to login
-          navigation.replace('Login');
+          // Navigate to login
+          router.replace('/screens/LoginScreen');
         }
       } catch (error) {
         console.error('Auth check error:', error);
-        navigation.replace('Login');
+        router.replace('/screens/LoginScreen');
       }
     };
 

@@ -11,6 +11,21 @@ import mongoose from 'mongoose';
 import cors from 'cors';
 import pdfParse from 'pdf-parse';
 import net from 'net';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+import { franc } from 'franc';
+import bcrypt from 'bcrypt';
+
+// 🆕 LangChain imports for web search agent
+import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
+import { AIMessage, BaseMessage, HumanMessage } from "@langchain/core/messages";
+import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
+import { StateGraph } from "@langchain/langgraph";
+import { Annotation } from "@langchain/langgraph";
+import { ToolNode } from "@langchain/langgraph/prebuilt";
+import { MongoDBSaver } from "@langchain/langgraph-checkpoint-mongodb";
+import { MongoClient } from "mongodb";
+import { TavilySearchResults } from "@langchain/community/tools/tavily_search";
 
 const app = express();
 const PORT = 3000; // Express HTTP API
@@ -20,7 +35,133 @@ app.use(express.json());
 app.use(cors());
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// Dummy chatbot response function
+// MongoDB client for LangChain
+let mongoClient = null;
+
+// Initialize MongoDB client
+async function initializeMongoClient() {
+  if (!mongoClient) {
+    mongoClient = new MongoClient(process.env.MONGODB_URI);
+    await mongoClient.connect();
+    console.log('MongoDB client for LangChain connected');
+  }
+  return mongoClient;
+}
+
+// 🆕 Web Search Agent using LangChain + Tavily
+async function callWebSearchAgent(query, threadId = null, language = 'en') {
+  try {
+    const client = await initializeMongoClient();
+    const dbName = "rag_web_agent";
+    
+    const GraphState = Annotation.Root({
+      messages: Annotation({
+        reducer: (x, y) => x.concat(y),
+      }),
+    });
+
+    // Tavily Web Search Tool
+    const tavily = new TavilySearchResults({
+      apiKey: process.env.TAVILY_API_KEY,
+      maxResults: 5,
+    });
+
+    const tools = [tavily];
+    const toolNode = new ToolNode(tools);
+
+    const model = new ChatOpenAI({
+      modelName: "gpt-4o-mini",
+      temperature: 0,
+      apiKey: OPENAI_API_KEY,
+    }).bindTools(tools);
+
+    function shouldContinue(state) {
+      const messages = state.messages;
+      const lastMessage = messages[messages.length - 1];
+      
+      if (lastMessage.tool_calls?.length) {
+        return "tools";
+      }
+      
+      const content = typeof lastMessage.content === "string" ? lastMessage.content : "";
+      if (content.toUpperCase().includes("FINAL ANSWER")) {
+        return "__end__";
+      }
+      
+      return "__end__";
+    }
+
+    async function callModel(state) {
+      const systemMessage = language === 'es' 
+        ? "Eres un asistente útil experto en las reglas y regulaciones de LAUSD que responde en español. Siempre utiliza la herramienta de búsqueda web para obtener información actualizada sobre LAUSD. Siempre provee enlaces a la información que encuentres."
+        : "You are a helpful AI assistant expert in LAUSD rules and regulations. Always use the web search tool to get up-to-date information about LAUSD. Always provide links to the information you find.";
+
+      const prompt = ChatPromptTemplate.fromMessages([
+        [
+          "system",
+          `${systemMessage}
+          
+If you can fully answer the user's question, prefix your response with 'FINAL ANSWER:' and provide a comprehensive answer.
+Do not repeat tasks endlessly. Always use the search tools when needed.
+Available tools: {tool_names}.
+Current time: {time}`,
+        ],
+        new MessagesPlaceholder("messages"),
+      ]);
+
+      const formattedPrompt = await prompt.formatMessages({
+        time: new Date().toISOString(),
+        tool_names: tools.map((tool) => tool.name).join(", "),
+        messages: state.messages,
+      });
+
+      const result = await model.invoke(formattedPrompt);
+      return { messages: [result] };
+    }
+
+    const workflow = new StateGraph(GraphState)
+      .addNode("agent", callModel)
+      .addNode("tools", toolNode)
+      .addEdge("__start__", "agent")
+      .addConditionalEdges("agent", shouldContinue)
+      .addEdge("tools", "agent");
+
+    const checkpointer = new MongoDBSaver({ client, dbName });
+    const app = workflow.compile({ checkpointer });
+
+    const config = {
+      recursionLimit: 15,
+      configurable: { 
+        thread_id: threadId || `thread_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      }
+    };
+
+    const finalState = await app.invoke(
+      {
+        messages: [new HumanMessage(query)],
+      },
+      config
+    );
+
+    const finalMessage = finalState.messages[finalState.messages.length - 1].content;
+    
+    // Clean up the "FINAL ANSWER:" prefix if present
+    const cleanedMessage = typeof finalMessage === 'string' 
+      ? finalMessage.replace(/^FINAL ANSWER:\s*/i, '')
+      : finalMessage;
+
+    console.log('Web search agent response:', cleanedMessage);
+    return cleanedMessage;
+    
+  } catch (error) {
+    console.error("Web search agent error:", error);
+    return language === 'es' 
+      ? "Lamento que haya habido un error, ¿puedes intentar reformular tu pregunta? Intenta simplificar la pregunta. Gracias."
+      : "I apologize for the error. Could you try rephrasing your question? Try to simplify the question. Thank you.";
+  }
+}
+
+// Dummy chatbot response function (keeping original for TCP compatibility)
 async function generateChatbotResponse(text, userId) {
   // Ensure PDF chunks are initialized
   const chunkCount = await DocumentChunk.countDocuments();
@@ -82,7 +223,7 @@ const tcpServer = net.createServer((socket) => {
     try {
       const { text, userId, targetLanguage } = JSON.parse(data.toString());
       console.log('Calling getRagAnswer...');
-      const { answer, translated } = await getRagAnswer(text, targetLanguage, userId);
+      const { answer, translated } = await getRagAnswer(text, targetLanguage, userId, 'tcp');
       console.log('Got answer:', answer);
 
       const responseData = JSON.stringify({
@@ -145,6 +286,7 @@ const conversationSchema = new mongoose.Schema({
   messages: [messageSchema],
   createdAt: { type: Date, default: Date.now }
 });
+const Conversation = mongoose.model('Conversation', conversationSchema);
 const documentChunkSchema = new mongoose.Schema({
   content: String,
   filename: String,
@@ -154,8 +296,29 @@ const documentChunkSchema = new mongoose.Schema({
     totalChunks: Number
   }
 });
-const Conversation = mongoose.model('Conversation', conversationSchema);
-const DocumentChunk = mongoose.model('DocumentChunk', documentChunkSchema, 'pdfs');
+const DocumentChunk = mongoose.model('DocumentChunk', documentChunkSchema);
+
+// New User model
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true, trim: true },
+  email:    { type: String, required: true, unique: true, trim: true },
+  password: { type: String, required: true }, // Hashed password
+  createdAt: { type: Date, default: Date.now }
+});
+
+// Hash password before saving
+userSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) return next();
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
+const User = mongoose.model('User', userSchema);
 
 // Utility: Chunk text
 function chunkText(text, size = 1000) {
@@ -296,11 +459,6 @@ async function initializeDatabase() {
   }
 }
 
-// Remove or comment out this block so DB initialization doesn't run on server start
-// mongoose.connection.on('connected', async () => {
-//   await initializeDatabase();
-// });
-
 // Conversation endpoints
 app.post('/api/conversations', async (req, res) => {
   try {
@@ -311,6 +469,7 @@ app.post('/api/conversations', async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 });
+
 app.get('/api/conversations', async (req, res) => {
   try {
     const conversations = await Conversation.find().sort({ createdAt: -1 });
@@ -319,6 +478,7 @@ app.get('/api/conversations', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 app.get('/api/conversations/:id', async (req, res) => {
   try {
     const conversation = await Conversation.findById(req.params.id);
@@ -328,6 +488,7 @@ app.get('/api/conversations/:id', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 app.post('/api/conversations/:id/messages', async (req, res) => {
   try {
     const { role, content } = req.body;
@@ -340,6 +501,17 @@ app.post('/api/conversations/:id/messages', async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 });
+
+app.patch('/api/conversations/:id', async (req, res) => {
+  try {
+    const conversation = await Conversation.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!conversation) return res.status(404).json({ error: 'Not found' });
+    res.json(conversation);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.delete('/api/conversations/:id', async (req, res) => {
   try {
     await Conversation.findByIdAndDelete(req.params.id);
@@ -349,47 +521,187 @@ app.delete('/api/conversations/:id', async (req, res) => {
   }
 });
 
-// Main RAG endpoint
-app.post('/api/ask', async (req, res) => {
-  const { question, language } = req.body;
+// 🆕 New endpoint for web search agent
+app.post('/api/web-search', async (req, res) => {
+  const { question, language = 'en', threadId } = req.body;
+  
   if (!question) {
     return res.status(400).json({ error: 'Question is required.' });
   }
+
   try {
-    const { answer, translated } = await getRagAnswer(question, language);
-    return res.json({ question, answer, translated });
+    const answer = await callWebSearchAgent(question, threadId, language);
+    
+    return res.json({
+      question,
+      answer,
+      language,
+      threadId: threadId || 'auto-generated',
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('Error in /api/web-search:', err);
+    return res.status(500).json({ 
+      error: 'Failed to process web search question.', 
+      details: err.message 
+    });
+  }
+});
+
+
+// Updated main RAG endpoint with automatic web search fallback
+app.post('/api/ask', async (req, res) => {
+  const { question, threadId } = req.body;
+  if (!question) {
+    return res.status(400).json({ error: 'Question is required.' });
+  }
+
+  // Detect language
+  let detectedLang = franc(question, { minLength: 3 });
+  let language = 'en'; // default
+  if (detectedLang === 'spa') language = 'es';
+  else if (detectedLang === 'eng') language = 'en';
+
+  try {
+    // First try RAG system
+    const { answer: ragAnswer, translated } = await getRagAnswer(question, language, null, 'http');
+
+    // Special case: If answer starts with "Traducción simulada:" it's definitely a fallback
+    if (typeof ragAnswer === 'string' && ragAnswer.startsWith("Traducción simulada:")) {
+      needsWebSearch = true;
+    }
+    
+    // Check if RAG answer contains fallback phrases
+    const fallbackPhrases = [
+  // English phrases
+  "couldn't find", "no relevant", "not found", "not mentioned", 
+  "I recommend", "you should check", "please contact", "I suggest",
+  "I'm not sure", "I don't know", "unable to find", "doesn't specify",
+  "doesn't mention", "not addressed", "not covered", "not available",
+  "not listed", "not provided", "not discussed", "refer to",
+  "check the website", "contact the", "look up", "search for",
+  "verify with", "consult the", "no information", "no details",
+  "not in the documents", "not in our records", "not currently available",
+  "suggest reaching out", "advise contacting", "recommend visiting",
+  "not specified here", "not contained in", "not included in",
+  "not part of", "outside the scope", "beyond the current",
+  "not documented", "not recorded", "not presently available",
+  "unable to locate", "cannot find", "don't have data",
+  "not within our", "not among our", "not in our system",
+  "would need to", "might want to", "should probably",
+  "may need to", "would have to", "it's best to",
+  "you may wish to", "consider reaching", "might consider",
+  
+  // Spanish phrases
+  "no se encuentra", "no menciona", "no está disponible", "Traducción simulada:",
+  "no aparece", "no se especifica", "no se aborda", 
+  "no se cubre", "no se discute", "no hay información",
+  "no tengo detalles", "consulte el sitio", "póngase en contacto",
+  "busque en", "verifique con", "recomiendo", "debería consultar",
+  "no estoy seguro", "no lo sé", "no puedo encontrar",
+  "no tenemos datos", "no consta en", "no figura en",
+  "diríjase a", "acuda a", "no se ha incluido",
+  "no en los documentos", "no en nuestros registros",
+  "no disponible actualmente", "sugiero contactar",
+  "aconsejo comunicarse", "recomiendo visitar",
+  "no especificado aquí", "no contenido en",
+  "no incluido en", "no forma parte de",
+  "fuera del alcance", "más allá de lo actual",
+  "no documentado", "no registrado", "no disponible actualmente",
+  "no puedo localizar", "no encuentro", "no tenemos información",
+  "no dentro de nuestros", "no entre nuestros", "no en nuestro sistema",
+  "tendría que", "quizás quiera", "probablemente debería",
+  "podría necesitar", "tendría que", "sería mejor",
+  "tal vez desee", "considere contactar", "podría considerar",
+  
+  // Catch-all patterns
+  /(sorry|lo siento).*(don't have|no tengo)/i,
+  /(recommend|recomendar).*(contact|contactar)/i,
+  /(refer|consulte).*(website|sitio)/i,
+  /(not|no).*(in the|en los).*(documents|documentos)/i,
+  /Traducción simulada:/i
+];
+    
+    const needsWebSearch = fallbackPhrases.some(phrase => {
+  const answerText = typeof ragAnswer === 'string' ? ragAnswer.toLowerCase() : '';
+  
+  if (phrase instanceof RegExp) {
+    return phrase.test(answerText); // Test regex against the answer
+  } else if (typeof phrase === 'string') {
+    return answerText.includes(phrase.toLowerCase());
+  }
+  
+  return false;
+});
+
+    let finalAnswer = ragAnswer;
+    let source = 'rag-system';
+    
+    // Fall back to web search if needed
+    if (needsWebSearch) {
+      console.log('Fallback detected - activating web search agent');
+      finalAnswer = await callWebSearchAgent(question, threadId, language);
+      source = 'web-search-agent';
+    }
+
+    return res.json({
+      question,
+      answer: language === 'es' ? translated : finalAnswer,
+      language,
+      source,
+      threadId: threadId || 'auto-generated',
+      timestamp: new Date().toISOString()
+    });
+
   } catch (err) {
     console.error('Error in /api/ask:', err);
-    return res.status(500).json({ error: 'Failed to process question.', details: err.message });
+    return res.status(500).json({ 
+      error: language === 'es' 
+        ? "Error procesando la pregunta. Por favor intente nuevamente." 
+        : "Error processing question. Please try again.",
+      details: err.message 
+    });
   }
 });
 
 // Root endpoint
 app.get('/', (req, res) => {
-  res.send(`<h2>LAUSD High Schools Scraper API</h2>`);
+  res.send(`
+    <h2>LAUSD High Schools Scraper API</h2>
+    <h3>Available Endpoints:</h3>
+    <ul>
+      <li><strong>POST /api/ask</strong> - RAG with web search fallback</li>
+      <li><strong>POST /api/web-search</strong> - Direct web search agent</li>
+      <li><strong>GET/POST /api/conversations</strong> - Conversation management</li>
+    </ul>
+    <h3>Web Search Agent Usage:</h3>
+    <code>
+    POST /api/web-search<br>
+    {<br>
+    &nbsp;&nbsp;"question": "What are the latest LAUSD enrollment policies?",<br>
+    &nbsp;&nbsp;"language": "en",<br>
+    &nbsp;&nbsp;"threadId": "optional-thread-id"<br>
+    }
+    </code>
+  `);
 });
 
 app.listen(PORT, () => {
   console.log(`HTTP server running on port ${PORT}`);
 });
 
-tcpServer.listen(TCP_PORT, TCP_HOST, () => {
-  console.log(`TCP Chatbot Server listening on ${TCP_HOST}:${TCP_PORT}`);
-});
+// New RAG answer function with enhanced web search
+async function getRagAnswer(question, language = 'en', userId = null, source = 'unknown') {
+  console.log(`[${source}] getRagAnswer called with:`, question, language, userId);
 
-// New RAG answer function
-async function getRagAnswer(question, language = 'en', userId = null) {
-  console.log('getRagAnswer called with:', question, language, userId);
-
-  // 1. Try Botpress first
-  const botpressAnswer = await askBotpress(question, userId || 'default');
-  if (botpressAnswer) {
-    let translated = botpressAnswer;
-    if (language && language !== 'en') {
-      translated = await translateText(botpressAnswer, language);
-    }
-    return { answer: botpressAnswer, translated };
-  }
+  // Optionally log to a file or database for future AI improvement
+  fs.appendFileSync('question_log.txt', JSON.stringify({
+    timestamp: new Date().toISOString(),
+    source,
+    userId,
+    question,
+    language
+  }) + '\n');
 
   const chunkCount = await DocumentChunk.countDocuments();
   console.log('Chunk count:', chunkCount);
@@ -451,6 +763,60 @@ async function getRagAnswer(question, language = 'en', userId = null) {
   console.log('OpenAI response received');
 
   let answer = response.data.choices?.[0]?.message?.content || 'No answer generated.';
+
+  // Check for misleading or unhelpful answers and trigger web search if needed
+  const fallbackPhrases = [
+    // English fallback phrases
+    "do not specifically list resources",
+    "couldn't find relevant information",
+    "no relevant information",
+    "not found in the provided documents",
+    "not mentioned in the provided documents",
+    "I recommend checking",
+    "please visit",
+    "you can find more information",
+    "I suggest searching",
+    "I'm not sure",
+    "I don't know",
+    // Spanish fallback phrases
+    "no se enumeran específicamente los recursos",
+    "no pude encontrar información relevante",
+    "no hay información relevante",
+    "no se encontró en los documentos proporcionados",
+    "no se menciona en los documentos proporcionados",
+    "recomiendo consultar",
+    "por favor visite",
+    "puede encontrar más información",
+    "sugiero buscar",
+    "no estoy seguro",
+    "no lo sé"
+  ];
+  
+  const isFallback = fallbackPhrases.some(phrase => {
+  const answerText = typeof answer === 'string' ? answer.toLowerCase() : '';
+  
+  if (phrase instanceof RegExp) {
+    return phrase.test(answerText);
+  } else if (typeof phrase === 'string') {
+    return answerText.includes(phrase.toLowerCase());
+  }
+  
+  return false;
+  });
+
+  // If fallback detected, use the new web search agent
+  if (isFallback) {
+    console.log('Fallback detected, using Tavily web search agent...');
+    try {
+      answer = await callWebSearchAgent(question, null, language);
+    } catch (webSearchError) {
+      console.error('Web search agent failed:', webSearchError);
+      answer = language === 'es' 
+        ? "No pude encontrar información relevante en los documentos ni en la búsqueda web."
+        : "I couldn't find relevant information in the documents or web search.";
+    }
+  }
+
   let translated = answer;
   if (language && language !== 'en') {
     translated = await translateText(answer, language);
@@ -458,20 +824,59 @@ async function getRagAnswer(question, language = 'en', userId = null) {
   return { answer, translated };
 }
 
-// Add this function near the top
-async function askBotpress(question, userId = 'default') {
-  try {
-    // Replace with your Botpress server and bot ID
-    const botpressUrl = 'http://localhost:3001/api/v1/bots/<your-bot-id>/converse/<user-id>';
-    const response = await axios.post(botpressUrl, {
-      type: 'text',
-      text: question
-    });
-    // Botpress returns an array of responses, get the first text
-    const answer = response.data.responses?.[0]?.payload?.text || null;
-    return answer;
-  } catch (err) {
-    console.error('Botpress error:', err.message);
-    return null;
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('Shutting down gracefully...');
+  if (mongoClient) {
+    await mongoClient.close();
   }
-}
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('Shutting down gracefully...');
+  if (mongoClient) {
+    await mongoClient.close();
+  }
+  process.exit(0);
+});
+
+// New user signup endpoint
+app.post('/api/signup', async (req, res) => {
+  const { username, email, password } = req.body;
+  try {
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: 'All fields are required.' });
+    }
+    const existingUser = await User.findOne({ $or: [{ email }, { username }] });
+    if (existingUser) {
+      return res.status(409).json({ error: 'Username or email already exists.' });
+    }
+    const user = new User({ username, email, password });
+    await user.save();
+    res.status(201).json({ message: 'User created successfully.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// New user login endpoint
+app.post('/api/login', async (req, res) => {
+  const { email, password } = req.body;
+  try {
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials.' });
+    }
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Invalid credentials.' });
+    }
+    res.json({ message: 'Login successful.', user: { username: user.username, email: user.email } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});

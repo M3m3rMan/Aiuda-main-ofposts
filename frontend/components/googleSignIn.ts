@@ -1,16 +1,22 @@
-import { auth, googleProvider } from './firebase';
+import { auth } from './firebase';
 import { GoogleAuthProvider, signInWithCredential, signOut } from 'firebase/auth';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
+import { makeRedirectUri } from 'expo-auth-session';
+
 
 WebBrowser.maybeCompleteAuthSession();
 
 export const useGoogleAuth = () => {
   const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: 'YOUR_EXPO_CLIENT_ID',
-    iosClientId: 'YOUR_IOS_CLIENT_ID',
-    androidClientId: 'YOUR_ANDROID_CLIENT_ID',
-    webClientId: 'YOUR_WEB_CLIENT_ID'
+    clientId: '87766396469-n2sld10s99ssgouk6rvghpbj8l0oflgg.apps.googleusercontent.com',
+    iosClientId: '87766396469-n2sld10s99ssgouk6rvghpbj8l0oflgg.apps.googleusercontent.com',
+    webClientId: '1064574150351-thn2hkt8gnabvbjrds2ssfu6qk1pcojt.apps.googleusercontent.com',
+    redirectUri: makeRedirectUri({
+      path: 'redirect',
+      native: 'frontend://redirect'
+    })
+    
   });
 
   const signInWithGoogle = async () => {
@@ -33,9 +39,9 @@ export const useGoogleAuth = () => {
       await signOut(auth);
     } catch (error) {
       console.error('Logout Error:', error);
-      throw error;
     }
   };
+  
 
   return { signInWithGoogle, logout, isSigningIn: request !== null && response === null };
-};
+}

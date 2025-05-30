@@ -1,0 +1,7 @@
+{"timestamp":"2025-05-29T04:02:15.962Z","source":"http","userId":null,"question":"¿Cuáles son los planes de LAUSD para inteligencia artificial en 2024?","language":"es"}
+{"timestamp":"2025-05-29T04:06:31.553Z","source":"http","userId":null,"question":"¿Cuáles son los planes de LAUSD para inteligencia artificial en 2024?","language":"es"}
+{"timestamp":"2025-05-29T04:40:36.645Z","source":"http","userId":null,"question":"¿Cuáles son los planes de LAUSD para inteligencia artificial en 2024?","language":"es"}
+{"timestamp":"2025-05-29T04:46:53.059Z","source":"http","userId":null,"question":"¿Cuáles son los planes de LAUSD para inteligencia artificial en 2024?","language":"es"}
+{"timestamp":"2025-05-29T04:49:57.375Z","source":"http","userId":null,"question":"¿Cuáles son los planes de LAUSD para inteligencia artificial en 2024?","language":"es"}
+{"timestamp":"2025-05-30T01:45:44.591Z","source":"http","userId":null,"question":"¿Cuáles son los planes de LAUSD para inteligencia artificial en 2024?","language":"es"}
+{"timestamp":"2025-05-30T02:09:49.482Z","source":"http","userId":null,"question":"¿Ha anunciado LAUSD nuevas iniciativas de inteligencia artificial este año? ","language":"en"}
