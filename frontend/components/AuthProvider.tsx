@@ -1,10 +1,7 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { auth } from './firebase';
-import { User, onAuthStateChanged } from 'firebase/auth';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { createContext, useContext, useState } from 'react';
 
 type AuthContextType = {
-  user: User | null;
+  user: any; // Replace with your user type or keep as any for now
   loading: boolean;
 };
 
@@ -14,17 +11,10 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null); // Replace any with your user type
+  const [loading, setLoading] = useState(false); // Set to false by default since no async auth
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setUser(user);
-      setLoading(false);
-    });
-
-    return unsubscribe;
-  }, []);
+  // You can add your own authentication logic here later
 
   return (
     <AuthContext.Provider value={{ user, loading }}>

@@ -1,10 +1,8 @@
 // components/AuthContext.tsx
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { auth } from './firebase';
-import { User } from 'firebase/auth';
+import React, { createContext, useContext, useState } from 'react';
 
 type AuthContextType = {
-  user: User | null;
+  user: any;
   loading: boolean;
 };
 
@@ -14,17 +12,10 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      setUser(user);
-      setLoading(false);
-    });
-
-    return unsubscribe;
-  }, []);
+  // Add your own authentication logic here if needed
 
   return (
     <AuthContext.Provider value={{ user, loading }}>

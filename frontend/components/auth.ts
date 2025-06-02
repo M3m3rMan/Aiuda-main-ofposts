@@ -1,6 +1,4 @@
 // components/auth.ts
-import { auth, googleProvider } from './firebase';
-import { GoogleAuthProvider, signInWithCredential, signOut } from 'firebase/auth';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -19,27 +17,12 @@ export const useAuth = () => {
     try {
       const result = await promptAsync();
       if (result?.type === 'success') {
-        const { id_token } = result.params;
-        const credential = GoogleAuthProvider.credential(id_token);
-        const userCredential = await signInWithCredential(auth, credential);
-        await AsyncStorage.setItem('userToken', userCredential.user.uid);
-        return userCredential.user;
+        // Handle Google sign-in result here
       }
-      return null;
-    } catch (error) {
-      console.error('Error signing in with Google:', error);
-      return null;
+    } catch (e) {
+      // Handle error
     }
   };
 
-  const logout = async () => {
-    try {
-      await signOut(auth);
-      await AsyncStorage.removeItem('userToken');
-    } catch (error) {
-      console.error('Error signing out:', error);
-    }
-  };
-
-  return { signInWithGoogle, logout, response };
+  return { signInWithGoogle };
 };
