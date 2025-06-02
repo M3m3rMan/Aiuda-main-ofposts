@@ -7,7 +7,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
-    <string>frontend</string>
+    <string>Aiuda</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -28,13 +28,13 @@
         <key>CFBundleURLSchemes</key>
         <array>
           <string>frontend</string>
-          <string>com.memer-man.frontend</string>
+          <string>com.memer-man.aiuda</string>
         </array>
       </dict>
       <dict>
         <key>CFBundleURLSchemes</key>
         <array>
-          <string>exp+frontend</string>
+          <string>com.googleusercontent.apps.810446761942-jn8b9pq71dmudi6k24u9poc8jau5ac1e</string>
         </array>
       </dict>
     </array>

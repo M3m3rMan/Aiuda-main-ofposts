@@ -1,17 +1,18 @@
 // app/signup.tsx
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, TextInput, Platform, Alert } from 'react-native';
-import { useGoogleAuth } from '@/components/googleSignIn';
+// import { useGoogleAuth } from '@/components/googleSignIn';
 import { Link, useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
+const { GoogleSignin } = require('@react-native-google-signin/google-signin');
 
 const LAUSD_BLUE = Colors.light.tint;
 const LAUSD_GOLD = '#FFD700';
 const API_BASE = Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://192.168.1.78:3000';
 
 export default function SignupScreen() {
-  const { signInWithGoogle } = useGoogleAuth();
+  // const { signInWithGoogle } = useGoogleAuth();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -66,7 +67,14 @@ export default function SignupScreen() {
   const handleGoogleSignUp = async () => {
     setIsSigningUp(true);
     try {
-      await signInWithGoogle();
+      // Configure GoogleSignin if not already configured elsewhere
+      // GoogleSignin.configure({
+      //   webClientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com',
+      // });
+
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      const userInfo = await GoogleSignin.signIn();
+      // You can send userInfo.idToken or userInfo.user info to your backend here if needed
       setMessage('¡Registro con Google exitoso!');
       showAiudaWelcome();
       router.replace('/(tabs)');

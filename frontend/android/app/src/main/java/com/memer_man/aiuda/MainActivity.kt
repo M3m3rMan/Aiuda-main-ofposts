@@ -1,4 +1,4 @@
-package com.memer_man.frontend
+package com.memer_man.aiuda
 import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build

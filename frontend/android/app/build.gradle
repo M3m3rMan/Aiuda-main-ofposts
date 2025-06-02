@@ -87,9 +87,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.memer_man.frontend'
+    namespace 'com.memer_man.aiuda'
     defaultConfig {
-        applicationId 'com.memer_man.frontend'
+        applicationId 'com.memer_man.aiuda'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

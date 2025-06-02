@@ -1,16 +1,23 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, TextInput, Platform, Alert } from 'react-native';
-import { useGoogleAuth } from '@/components/googleSignIn';
 import { Link, useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  GoogleSignin,
+  User,
+  statusCodes,
+  isErrorWithCode,
+  isSuccessResponse,
+  isNoSavedCredentialFoundResponse,
+} from "@react-native-google-signin/google-signin";
+
 
 const API_BASE = Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://192.168.1.78:3000';
 const LAUSD_BLUE = Colors.light.tint;
 const LAUSD_GOLD = '#FFD700'; // Use gold color for buttons
 
 export default function LoginScreen() {
-  const { signInWithGoogle } = useGoogleAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -52,10 +59,18 @@ export default function LoginScreen() {
     setIsLoggingIn(false);
   };
 
+  GoogleSignin.configure({
+  webClientId:
+    "810446761942-mdsu2pta40adbi8o38p5cfspe5up9i1o.apps.googleusercontent.com",
+  iosClientId:
+    "810446761942-jn8b9pq71dmudi6k24u9poc8jau5ac1e.apps.googleusercontent.com",
+});
+
+
   const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true);
     try {
-      await signInWithGoogle();
+      await GoogleSignin.signIn();
       setMessage('Google sign-in successful!');
       showAiudaWelcome();
       router.replace('/(tabs)');

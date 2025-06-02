@@ -1,4 +1,4 @@
-package com.memer_man.frontend
+package com.memer_man.aiuda
 
 import android.app.Application
 import android.content.res.Configuration
