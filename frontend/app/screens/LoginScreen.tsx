@@ -1,17 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, TextInput, Platform, Alert } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  GoogleSignin,
-  User,
-  statusCodes,
-  isErrorWithCode,
-  isSuccessResponse,
-  isNoSavedCredentialFoundResponse,
-} from "@react-native-google-signin/google-signin";
-
+import * as WebBrowser from 'expo-web-browser';
+import * as GoogleSignin from 'expo-auth-session/providers/google';
 
 const API_BASE = Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://192.168.1.78:3000';
 const LAUSD_BLUE = Colors.light.tint;
@@ -57,30 +50,39 @@ export default function LoginScreen() {
       setMessage('Error de red. ¿El servidor está corriendo?');
     }
     setIsLoggingIn(false);
+};
+
+
+  // Google Sign-In setup
+  const config = {
+    webClientId:
+      "WEB-CLIENT-ID.apps.googleusercontent.com", // Replace with your web client ID
+    iosClientId:
+      "IOS-CLIENT-ID.apps.googleusercontent.com", // Replace
   };
-
-  GoogleSignin.configure({
-  webClientId:
-    "810446761942-mdsu2pta40adbi8o38p5cfspe5up9i1o.apps.googleusercontent.com",
-  iosClientId:
-    "810446761942-jn8b9pq71dmudi6k24u9poc8jau5ac1e.apps.googleusercontent.com",
-});
-
+  const [request, response, promptAsync] = GoogleSignin.useIdTokenAuthRequest(config);
 
   const handleGoogleSignIn = async () => {
+    WebBrowser.maybeCompleteAuthSession();
     setIsGoogleLoading(true);
     try {
-      await GoogleSignin.signIn();
-      setMessage('Google sign-in successful!');
-      showAiudaWelcome();
-      router.replace('/(tabs)');
-    } catch (error) {
-      console.error("Google Sign-In Error:", error);
-      Alert.alert("Error", "Something went wrong with Google sign-in. Please try again.");
-    } finally {
-      setIsGoogleLoading(false);
+      await promptAsync();
+    } catch (err) {
+      console.error('[Google Sign-In] Error:', err);
     }
+    setIsGoogleLoading(false);
   };
+
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { authentication } = response.params;
+      const token = authentication;
+      console.log('[Google Sign-In] Token:', token);
+      // You can handle the token here (e.g., send to backend)
+      showAiudaWelcome();
+      router.replace('/(tabs)'); // Navigate to index.tsx (root)
+    }
+  }, [response]);
 
 
   return (
@@ -165,13 +167,12 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 20, // Reduced from 40 to 10 for tighter spacing
   },
   logo: {
     width: 300,
     height: 300,
-    marginBottom: 16,
-  },
+    },
   title: {
     fontSize: 32,
     fontWeight: 'bold',

@@ -1,11 +1,12 @@
 // app/signup.tsx
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, TextInput, Platform, Alert } from 'react-native';
-// import { useGoogleAuth } from '@/components/googleSignIn';
+import * as WebBrowser from 'expo-web-browser';
+import * as GoogleSignin from 'expo-auth-session/providers/google';
 import { Link, useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
-const { GoogleSignin } = require('@react-native-google-signin/google-signin');
+const { GoogleSignin: RNGoogleSignin } = require('@react-native-google-signin/google-signin');
 
 const LAUSD_BLUE = Colors.light.tint;
 const LAUSD_GOLD = '#FFD700';
@@ -22,6 +23,15 @@ export default function SignupScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showPassword2, setShowPassword2] = useState(false);
   const router = useRouter();
+
+  // Google Sign-In setup
+  const config = {
+    webClientId:
+      "WEB-CLIENT-ID.apps.googleusercontent.com", // Replace with your web client ID
+    iosClientId:
+      "IOS-CLIENT-ID.apps.googleusercontent.com", // Replace with your iOS client ID
+  };
+  const [request, response, promptAsync] = GoogleSignin.useIdTokenAuthRequest(config);
 
   const showAiudaWelcome = () => {
     Alert.alert(
@@ -65,26 +75,26 @@ export default function SignupScreen() {
   };
 
   const handleGoogleSignUp = async () => {
+    WebBrowser.maybeCompleteAuthSession();
     setIsSigningUp(true);
     try {
-      // Configure GoogleSignin if not already configured elsewhere
-      // GoogleSignin.configure({
-      //   webClientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com',
-      // });
-
-      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-      const userInfo = await GoogleSignin.signIn();
-      // You can send userInfo.idToken or userInfo.user info to your backend here if needed
-      setMessage('¡Registro con Google exitoso!');
-      showAiudaWelcome();
-      router.replace('/(tabs)');
-    } catch (error) {
-      console.error('Google Sign-Up Error:', error);
-      Alert.alert('Error', 'Ocurrió un error con el registro de Google. Intenta de nuevo.');
-    } finally {
-      setIsSigningUp(false);
+      await promptAsync();
+    } catch (err) {
+      console.error('[Google Sign-In] Error:', err);
     }
+    setIsSigningUp(false);
   };
+
+  React.useEffect(() => {
+    if (response?.type === 'success') {
+      const { authentication } = response.params;
+      const token = authentication;
+      console.log('[Google Sign-In] Token:', token);
+      // You can handle the token here (e.g., send to backend)
+      showAiudaWelcome();
+      router.replace('/(tabs)'); // Navigate to root
+    }
+  }, [response]);
 
   return (
     <View style={styles.container}>

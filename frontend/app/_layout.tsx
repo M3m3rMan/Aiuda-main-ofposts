@@ -5,8 +5,9 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
+import { useColorScheme } from 'react-native';
 
-import { useColorScheme } from '@/components/useColorScheme';
+import { useColorScheme as useCustomColorScheme } from '@/components/useColorScheme';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -15,7 +16,7 @@ export {
 
 export const unstable_settings = {
   // Ensure that reloading on `/modal` keeps a back button present.
-  initialRouteName: 'screens/LoginScreen',
+  initialRouteName: '/app/screens/LoginScreen',
 };
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
@@ -46,7 +47,7 @@ export default function RootLayout() {
 }
 
 function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+  const colorScheme = useCustomColorScheme();
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>

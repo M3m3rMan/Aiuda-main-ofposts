@@ -1,2 +1,0 @@
-{"timestamp":"2025-06-02T03:03:43.441Z","source":"http","userId":null,"question":"¿Cuáles son los requisitos de calificación de la escuela secundaria Jordan para mi hijo? ","language":"es"}
-{"timestamp":"2025-06-02T03:09:15.437Z","source":"http","userId":null,"question":"¿Cuáles son los requisitos de calificación de la escuela secundaria Jordan para mi hijo?","language":"es"}

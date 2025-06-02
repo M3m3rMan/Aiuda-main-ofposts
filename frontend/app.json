@@ -17,7 +17,6 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.memer-man.aiuda"
     },
-    
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
@@ -38,10 +37,17 @@
       [
         "@react-native-google-signin/google-signin",
         {
-          "iosUrlScheme": "com.googleusercontent.apps.810446761942-jn8b9pq71dmudi6k24u9poc8jau5ac1e"
+          "iosUrlScheme": "iosUrlScheme"
         }
       ],
-      "expo-router"
+      "expo-router",
+      "expo-web-browser"
     ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "d0a1a38f-069b-4c50-94e2-9312a67eae95"
+      }
+    }
   }
 }
