@@ -486,7 +486,7 @@ export default function App() {
         <View style={styles.logoGlow}>
           <View style={styles.logoCircle}>
             <Image
-              source={require('../../assets/images/logo3.png')}
+              source={require('../../assets/images/logo4.png')}
               style={{ width: 110, height: 110, resizeMode: 'contain' }}
             />
           </View>
@@ -572,8 +572,8 @@ export default function App() {
           <View style={styles.sidebarLogoContainer}>
             <View style={styles.sidebarLogo}>
               <Image
-                source={require('../../assets/images/logo.png')}
-                style={{ width: 32, height: 32, resizeMode: 'contain' }}
+                source={require('../../assets/images/logo4.png')}
+                style={{ width: 50, height: 50, resizeMode: 'contain' }}
               />
             </View>
             <View style={styles.sidebarTitleContainer}>
@@ -679,7 +679,7 @@ export default function App() {
           <View style={styles.headerCenter}>
             <View style={styles.headerLogo}>
               <Image
-                source={require('../../assets/images/logo3.png')}
+                source={require('../../assets/images/logo4.png')}
                 style={{ width: 50, height: 50, resizeMode: 'contain' }}
               />
             </View>
