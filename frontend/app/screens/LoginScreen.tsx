@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import * as GoogleSignin from 'expo-auth-session/providers/google';
 
-const API_BASE = Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://192.168.1.78:3000';
+const API_BASE = 'https://aiuda-backend-production.up.railway.app';
 const LAUSD_BLUE = Colors.light.tint;
 const LAUSD_GOLD = '#FFD700'; // Use gold color for buttons
 
@@ -56,9 +56,9 @@ export default function LoginScreen() {
   // Google Sign-In setup
   const config = {
     webClientId:
-      "WEB-CLIENT-ID.apps.googleusercontent.com", // Replace with your web client ID
+      "810446761942-mdsu2pta40adbi8o38p5cfspe5up9i1o.apps.googleusercontent.com",
     iosClientId:
-      "IOS-CLIENT-ID.apps.googleusercontent.com", // Replace
+      "810446761942-jn8b9pq71dmudi6k24u9poc8jau5ac1e.apps.googleusercontent.com",
   };
   const [request, response, promptAsync] = GoogleSignin.useIdTokenAuthRequest(config);
 
@@ -89,7 +89,7 @@ export default function LoginScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Image
-          source={require('@/assets/images/logo.png')}
+          source={require('@/assets/images/logo4.png')}
           style={styles.logo}
           resizeMode="contain"
         />

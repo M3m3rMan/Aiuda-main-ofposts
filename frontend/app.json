@@ -4,12 +4,12 @@
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/logo2.png",
+    "icon": "./assets/images/splash-aiuda.png",
     "scheme": "frontend",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/splash-icon.png",
+      "image": "./assets/images/splash-aiuda.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -35,12 +35,20 @@
     },
     "plugins": [
       "expo-router",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#232323",
+          "image": "./assets/images/splash-aiuda.png",
+          "resizeMode": "cover"
+        }
+      ]
     ],
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "d0a1a38f-069b-4c50-94e2-9312a67eae95"
+        "projectId": "0b66d7ff-a1d4-4688-9179-a7e16895c824"
       }
     }
   }

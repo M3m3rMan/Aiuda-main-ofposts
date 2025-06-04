@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import Markdown from 'react-native-markdown-display';
 
-const API_URL = 'http://192.168.1.78:3000/api';
+const API_URL = 'https://aiuda-backend-production.up.railway.app/api';
 
 // Premium Gold Color Palette - Inspired by luxury and professionalism
 const COLORS = {

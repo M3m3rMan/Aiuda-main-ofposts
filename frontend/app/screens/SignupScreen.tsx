@@ -10,7 +10,7 @@ const { GoogleSignin: RNGoogleSignin } = require('@react-native-google-signin/go
 
 const LAUSD_BLUE = Colors.light.tint;
 const LAUSD_GOLD = '#FFD700';
-const API_BASE = Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://192.168.1.78:3000';
+const API_BASE = 'https://aiuda-backend-production.up.railway.app';
 
 export default function SignupScreen() {
   // const { signInWithGoogle } = useGoogleAuth();
@@ -27,9 +27,9 @@ export default function SignupScreen() {
   // Google Sign-In setup
   const config = {
     webClientId:
-      "WEB-CLIENT-ID.apps.googleusercontent.com", // Replace with your web client ID
+      "810446761942-mdsu2pta40adbi8o38p5cfspe5up9i1o.apps.googleusercontent.com",
     iosClientId:
-      "IOS-CLIENT-ID.apps.googleusercontent.com", // Replace with your iOS client ID
+      "810446761942-jn8b9pq71dmudi6k24u9poc8jau5ac1e.apps.googleusercontent.com",
   };
   const [request, response, promptAsync] = GoogleSignin.useIdTokenAuthRequest(config);
 
@@ -100,7 +100,7 @@ export default function SignupScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Image
-          source={require('@/assets/images/logo.png')}
+          source={require('@/assets/images/logo4.png')}
           style={styles.logo}
           resizeMode="contain"
         />
@@ -203,7 +203,6 @@ const styles = StyleSheet.create({
   logo: {
     width: 300,
     height: 300,
-    marginBottom: 16,
   },
   title: {
     fontSize: 32,
