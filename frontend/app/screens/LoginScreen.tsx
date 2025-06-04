@@ -56,9 +56,9 @@ export default function LoginScreen() {
   // Google Sign-In setup
   const config = {
     webClientId:
-      "810446761942-mdsu2pta40adbi8o38p5cfspe5up9i1o.apps.googleusercontent.com",
+      "Web-Client.apps.googleusercontent.com",
     iosClientId:
-      "810446761942-jn8b9pq71dmudi6k24u9poc8jau5ac1e.apps.googleusercontent.com",
+      "Ios-Client.apps.googleusercontent.com",
   };
   const [request, response, promptAsync] = GoogleSignin.useIdTokenAuthRequest(config);
 
