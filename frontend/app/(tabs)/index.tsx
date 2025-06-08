@@ -3,8 +3,9 @@ import { View, Text, TouchableOpacity, StyleSheet, FlatList, TextInput, Activity
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import Markdown from 'react-native-markdown-display';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_URL = 'https://aiuda-backend-production.up.railway.app/api';
+const API_URL = 'http://IP-ADDRESS:3000/api';
 
 // Premium Gold Color Palette - Inspired by luxury and professionalism
 const COLORS = {
@@ -59,8 +60,18 @@ export default function App() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const sidebarAnimation = useRef(new Animated.Value(-320)).current;
+
+  // Load userId on app start
+  useEffect(() => {
+    const loadUserId = async () => {
+      const id = await AsyncStorage.getItem('userId');
+      setUserId(id);
+    };
+    loadUserId();
+  }, []);
 
   // Fetch all conversations
   useEffect(() => {
@@ -322,7 +333,7 @@ export default function App() {
 
     try {
       console.log('Sending request to backend:', `${API_URL}/ask`);
-      console.log('Request payload:', { question: currentInput, threadId: currentConversationId });
+      console.log('Request payload:', { question: currentInput, threadId: currentConversationId, userId });
       
       // Send message to AI
       const response = await fetch(`${API_URL}/ask`, {
@@ -333,7 +344,8 @@ export default function App() {
         },
         body: JSON.stringify({
           question: currentInput,
-          threadId: currentConversationId
+          threadId: currentConversationId,
+          userId // <-- always send userId
         }),
       });
 
