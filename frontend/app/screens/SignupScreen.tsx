@@ -7,10 +7,11 @@ import { Link, useRouter } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
 const { GoogleSignin: RNGoogleSignin } = require('@react-native-google-signin/google-signin');
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LAUSD_BLUE = Colors.light.tint;
 const LAUSD_GOLD = '#FFD700';
-const API_BASE = 'https://aiuda-backend-production.up.railway.app';
+const API_BASE = 'http://IP-ADDRESS:3000';
 
 export default function SignupScreen() {
   // const { signInWithGoogle } = useGoogleAuth();
@@ -27,9 +28,9 @@ export default function SignupScreen() {
   // Google Sign-In setup
   const config = {
     webClientId:
-      "810446761942-mdsu2pta40adbi8o38p5cfspe5up9i1o.apps.googleusercontent.com",
+      "WEB_CLIENT_ID.apps.googleusercontent.com",
     iosClientId:
-      "810446761942-jn8b9pq71dmudi6k24u9poc8jau5ac1e.apps.googleusercontent.com",
+      "IOS_CLIENT_ID.apps.googleusercontent.com",
   };
   const [request, response, promptAsync] = GoogleSignin.useIdTokenAuthRequest(config);
 
@@ -60,10 +61,10 @@ export default function SignupScreen() {
       });
       const data = await res.json();
       console.log('[Signup] Received response:', data);
-      if (res.ok) {
-        setMessage('¡Registro exitoso!');
+      if (res.ok && data.user && data.user.id) {
+        await AsyncStorage.setItem('userId', String(data.user.id));
         showAiudaWelcome();
-        setTimeout(() => router.replace('/(tabs)'), 500); // Small delay for UX
+        setTimeout(() => router.replace('/(tabs)'), 500);
       } else {
         setMessage(data.error || 'Error al registrarse.');
       }
@@ -86,14 +87,40 @@ export default function SignupScreen() {
   };
 
   React.useEffect(() => {
-    if (response?.type === 'success') {
-      const { authentication } = response.params;
-      const token = authentication;
-      console.log('[Google Sign-In] Token:', token);
-      // You can handle the token here (e.g., send to backend)
-      showAiudaWelcome();
-      router.replace('/(tabs)'); // Navigate to root
-    }
+    const handleGoogleAuth = async () => {
+      if (response?.type === 'success') {
+        const { authentication } = response.params;
+        let idToken: string | undefined;
+        if (typeof authentication === 'string') {
+          idToken = authentication;
+        } else if (authentication && typeof authentication === 'object') {
+          const authObj = authentication as { idToken?: string; accessToken?: string };
+          idToken = authObj.idToken || authObj.accessToken;
+        }
+        console.log('[Google Sign-In] Token:', idToken);
+
+        try {
+          // Send token to backend
+          const res = await fetch(`${API_BASE}/api/google-login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idToken }),
+          });
+          const data = await res.json();
+          if (res.ok && data.user && data.user.id) {
+            await AsyncStorage.setItem('userId', String(data.user.id));
+            showAiudaWelcome();
+            setTimeout(() => router.replace('/(tabs)'), 500);
+          } else {
+            setMessage(data.error || 'Error al iniciar sesión.');
+          }
+        } catch (err) {
+          console.error('[Google Sign-In] Backend error:', err);
+          Alert.alert('Error', 'No se pudo conectar con el servidor.');
+        }
+      }
+    };
+    handleGoogleAuth();
   }, [response]);
 
   return (
